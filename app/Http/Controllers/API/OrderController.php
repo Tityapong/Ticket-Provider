@@ -54,6 +54,7 @@ class OrderController extends Controller
             ], 500);
         }
     }
+    
 
     public function scan(Request $request)
     {
