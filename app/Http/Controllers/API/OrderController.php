@@ -20,11 +20,7 @@ class OrderController extends Controller
 
             $formattedOrders = $orders->map(function ($order) {
                 $event = $order->ticketType->event ?? null;
-                $eventImageUrl = null;
-
-                if ($event && $event->image) {
-                    $eventImageUrl = $this->getFullImageUrl($event->image);
-                }
+                $eventImageUrl = $event && $event->image ? $this->getFullImageUrl($event->image) : null;
 
                 return [
                     'order_id'       => $order->id,
@@ -54,39 +50,38 @@ class OrderController extends Controller
             ], 500);
         }
     }
-    
 
     public function scan(Request $request)
     {
         $validator = Validator::make($request->all(), [
             'qr_code' => 'required|string',
         ]);
-    
+
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 422);
         }
-    
+
         try {
             $qrData = json_decode($request->qr_code, true);
-    
-            if (json_last_error() !== JSON_ERROR_NONE || !is_array($qrData) || !isset($qrData['order_id'])) {
+
+            if (json_last_error() !== JSON_ERROR_NONE || !is_array($qrData) || !isset($qrData['order_id']) || !isset($qrData['ticket_type_id']) || !isset($qrData['event_id']) || !isset($qrData['quantity'])) {
                 return response()->json(['errors' => ['qr_code' => ['The selected qr code is invalid.']]], 422);
             }
-    
+
             $order = Order::where('id', $qrData['order_id'])->first();
-    
+
             if (!$order) {
                 return response()->json(['errors' => ['qr_code' => ['The selected qr code is invalid.']]], 422);
             }
-    
+
             if ($order->is_scanned) {
                 return response()->json([
                     'message' => 'Ticket has already been scanned',
                 ], 400);
             }
-    
+
             $order->update(['is_scanned' => true]);
-    
+
             return response()->json([
                 'message' => 'Ticket successfully scanned',
                 'order_id' => $order->id,
@@ -136,16 +131,20 @@ class OrderController extends Controller
                 $orderData['payment_status'] = 'Pending';
             }
 
-            // Generate QR code
+            // Generate and save QR code with directory check
             $qrData = json_encode([
-                'order_id' => Str::random(10), // Temporary ID for QR generation
+                'order_id' => Str::random(10), // Temporary ID
                 'ticket_type_id' => $request->ticket_type_id,
                 'event_id' => $ticketType->event->id,
                 'quantity' => $request->quantity,
                 'order_number' => 'ORD-' . str_pad(mt_rand(1, 99999999), 8, '0', STR_PAD_LEFT),
             ]);
             $qrCodeFilename = 'qr_codes/' . Str::random(20) . '.png';
-            QrCode::format('png')->size(300)->generate($qrData, storage_path('app/public/' . $qrCodeFilename));
+            $qrCodePath = storage_path('app/public/' . $qrCodeFilename);
+            if (!file_exists(dirname($qrCodePath))) {
+                mkdir(dirname($qrCodePath), 0755, true);
+            }
+            QrCode::format('png')->size(300)->generate($qrData, $qrCodePath);
             $orderData['qr_code'] = $qrCodeFilename;
 
             $order = Order::create($orderData);
@@ -158,10 +157,10 @@ class OrderController extends Controller
                 'quantity' => $request->quantity,
                 'order_number' => 'ORD-' . str_pad($order->id, 8, '0', STR_PAD_LEFT),
             ]);
-            QrCode::format('png')->size(300)->generate($qrData, storage_path('app/public/' . $qrCodeFilename));
+            QrCode::format('png')->size(300)->generate($qrData, $qrCodePath);
             $order->update(['qr_code' => $qrCodeFilename]);
 
-            // Handle file upload
+            // Handle file upload with directory check
             if ($request->hasFile('image')) {
                 $order->image = $this->storeOrderImage($request->file('image'));
                 $order->save();
@@ -282,7 +281,7 @@ class OrderController extends Controller
                 $ticketType->increment('quantity_available', $quantityDifference);
             }
 
-            // Handle file upload
+            // Handle file upload with directory check
             if ($request->hasFile('image')) {
                 if ($order->image) {
                     Storage::delete('public/Order/' . $order->image);
@@ -406,7 +405,11 @@ class OrderController extends Controller
     protected function storeOrderImage($file)
     {
         $filename = Str::random(20) . '_' . time() . '.' . $file->getClientOriginalExtension();
-        $file->storeAs('public/Order', $filename);
+        $directory = 'public/Order';
+        if (!Storage::exists($directory)) {
+            Storage::makeDirectory($directory, 0755, true);
+        }
+        $file->storeAs($directory, $filename);
         return $filename;
     }
 }
