@@ -12,6 +12,7 @@ class DiscountController extends Controller
     {
         return response()->json(Discount::with('event')->get());
     }
+    
 
     public function store(Request $request)
     {
