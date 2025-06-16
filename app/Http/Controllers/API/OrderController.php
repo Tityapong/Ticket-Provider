@@ -16,12 +16,15 @@ class OrderController extends Controller
     public function index()
     {
         try {
-            $orders = Order::with(['ticketType.event'])->get();
-
+            // Fetch orders for the authenticated user
+            $orders = Order::with(['ticketType.event'])
+                ->where('user_id', auth()->id())
+                ->get();
+    
             $formattedOrders = $orders->map(function ($order) {
                 $event = $order->ticketType->event ?? null;
                 $eventImageUrl = $event && $event->image ? $this->getFullImageUrl($event->image) : null;
-
+    
                 return [
                     'order_id'       => $order->id,
                     'order_date'     => $order->order_date ?? $order->created_at->format('Y-m-d H:i:s'),
@@ -41,7 +44,7 @@ class OrderController extends Controller
                     'order_image'    => $order->image ? $this->getOrderImageUrl($order->image) : null,
                 ];
             });
-
+    
             return response()->json($formattedOrders, 200);
         } catch (\Exception $e) {
             return response()->json([
@@ -50,6 +53,7 @@ class OrderController extends Controller
             ], 500);
         }
     }
+
 
     public function scan(Request $request)
     {
