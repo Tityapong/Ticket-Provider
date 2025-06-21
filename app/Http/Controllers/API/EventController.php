@@ -14,17 +14,26 @@ use Illuminate\Support\Facades\Validator;
 class EventController extends Controller
 {
     // GET /api/events
-    public function index()
+    public function index(Request $request)
     {
-        $events = Event::with(['category', 'ticketTypes', 'organizer'])->latest()->get();
-
-        // Calculate category popularity
-        $categoryPopularity = Event::select('category_id')
+        // Get user_id from the request (e.g., passed as a query parameter or from authenticated user)
+        $userId = $request->input('user_id') ?? auth()->id(); // Fallback to authenticated user if no user_id is provided
+    
+        // Fetch events for the specific user_id with related data
+        $events = Event::where('user_id', $userId)
+            ->with(['category', 'ticketTypes', 'organizer'])
+            ->latest()
+            ->get();
+    
+        // Calculate category popularity (optional, based on user_id filtered events)
+        $categoryPopularity = Event::where('user_id', $userId)
+            ->select('category_id')
             ->groupBy('category_id')
             ->selectRaw('COUNT(*) as event_count')
             ->pluck('event_count', 'category_id')
             ->toArray();
-
+    
+        // Transform the events data
         $transformed = $events->map(function ($event) use ($categoryPopularity) {
             return [
                 'id' => (string) $event->id,
@@ -47,7 +56,7 @@ class EventController extends Controller
                 'category' => $event->category ? $event->category->category_name : 'Uncategorized',
             ];
         });
-
+    
         return response()->json($transformed);
     }
 
